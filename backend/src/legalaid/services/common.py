@@ -43,15 +43,6 @@ def create_service_app(
         openapi_tags=[{"name": service_name, "description": description}],
     )
 
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=settings.cors_origins,
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-        expose_headers=[TRACE_HEADER],
-    )
-
     @app.middleware("http")
     async def _trace_middleware(
         request: Request, call_next: Callable[[Request], Awaitable[Response]]
@@ -107,6 +98,21 @@ def create_service_app(
             else:
                 logger.warning("auth_disabled", detail="AUTH_ENABLED=false; API is open.")
             logger.info("service_started", service=service_name, transport=settings.service_transport)
+
+    orig_build_middleware_stack = app.build_middleware_stack
+
+    def _build_middleware_stack_with_cors() -> Any:
+        stack = orig_build_middleware_stack()
+        return CORSMiddleware(
+            stack,
+            allow_origins=settings.cors_origins,
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
+            expose_headers=[TRACE_HEADER],
+        )
+
+    app.build_middleware_stack = _build_middleware_stack_with_cors  # type: ignore[method-assign]
 
     app.state.service_name = service_name
     return app
