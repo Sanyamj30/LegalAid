@@ -1,0 +1,43 @@
+{
+  "query": "Under Section 27 of the Indian Contract Act, 1872, is a non-compete covenant enforceable against an employee after the termination of employment?",
+  "evaluated_at": "2026-11-01 07:01:33 UTC",
+  "profiles": {
+    "react_architecture": {
+      "architecture_name": "ReAct Architecture",
+      "prompt_profile": "REACT_LOOP",
+      "wall_clock_latency_ms": 5409.81,
+      "total_tool_calls": 3,
+      "adk_input_tokens": 4120,
+      "adk_output_tokens": 940,
+      "crewai_input_tokens": 2850,
+      "crewai_output_tokens": 1120,
+      "total_tokens": 9030,
+      "estimated_adk_cost_usd": 0.003643,
+      "estimated_crewai_cost_usd": 0.02535,
+      "total_cost_usd": 0.028993,
+      "citations_count": 2,
+      "confidence_rating": "HIGH"
+    },
+    "few_shot_architecture": {
+      "architecture_name": "Few-Shot Intake/Critic",
+      "prompt_profile": "STRICT_CRITIC",
+      "wall_clock_latency_ms": 5563.29,
+      "total_tool_calls": 1,
+      "adk_input_tokens": 2050,
+      "adk_output_tokens": 580,
+      "crewai_input_tokens": 2850,
+      "crewai_output_tokens": 1120,
+      "total_tokens": 6600,
+      "estimated_adk_cost_usd": 0.001894,
+      "estimated_crewai_cost_usd": 0.02535,
+      "total_cost_usd": 0.027244,
+      "citations_count": 2,
+      "confidence_rating": "HIGH"
+    }
+  },
+  "comparative_deltas": {
+    "latency_difference_ms": -153.48,
+    "cost_difference_usd": 0.001749,
+    "token_overhead_percentage": 36.82
+  }
+}

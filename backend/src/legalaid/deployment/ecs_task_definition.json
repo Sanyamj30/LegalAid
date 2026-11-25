@@ -1,0 +1,121 @@
+{
+  "family": "legalaid-multiagent-cluster",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": [
+    "EC2"
+  ],
+  "cpu": "8192",
+  "memory": "32768",
+  "containerDefinitions": [
+    {
+      "name": "legalaid-vllm-inference",
+      "image": "vllm/vllm-openai:v0.6.2",
+      "essential": true,
+      "cpu": 4096,
+      "memory": 20480,
+      "portMappings": [
+        {
+          "containerPort": 8000,
+          "hostPort": 8000,
+          "protocol": "tcp"
+        }
+      ],
+      "command": [
+        "--model", "meta-llama/Meta-Llama-3.1-8B-Instruct",
+        "--dtype", "bfloat16",
+        "--max-model-len", "8192",
+        "--gpu-memory-utilization", "0.90",
+        "--tensor-parallel-size", "1"
+      ],
+      "resourceRequirements": [
+        {
+          "type": "GPU",
+          "value": "1"
+        }
+      ],
+      "environment": [
+        { "name": "HF_TOKEN", "value": "secret:legalaid/hf-token" }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/legalaid-multiagent",
+          "awslogs-region": "ap-south-1",
+          "awslogs-stream-prefix": "vllm"
+        }
+      }
+    },
+    {
+      "name": "legalaid-mcp-retrieval",
+      "image": "123456789012.dkr.ecr.ap-south-1.amazonaws.com/legalaid-backend:latest",
+      "essential": true,
+      "cpu": 2048,
+      "memory": 6144,
+      "command": ["python", "-m", "legalaid.mcp.retrieval_server"],
+      "portMappings": [
+        {
+          "containerPort": 8001,
+          "hostPort": 8001,
+          "protocol": "tcp"
+        }
+      ],
+      "environment": [
+        { "name": "DATABASE_URL", "value": "postgresql+psycopg://app:pass@aurora-pg.cluster.ap-south-1.rds.amazonaws.com/legalaid" },
+        { "name": "FAISS_INDEX_DIR", "value": "/mnt/efs/indices" }
+      ],
+      "mountPoints": [
+        {
+          "sourceVolume": "efs-corpus-indices",
+          "containerPath": "/mnt/efs/indices",
+          "readOnly": true
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/legalaid-multiagent",
+          "awslogs-region": "ap-south-1",
+          "awslogs-stream-prefix": "mcp"
+        }
+      }
+    },
+    {
+      "name": "legalaid-agent-orchestrator",
+      "image": "123456789012.dkr.ecr.ap-south-1.amazonaws.com/legalaid-backend:latest",
+      "essential": true,
+      "cpu": 2048,
+      "memory": 6144,
+      "command": ["uvicorn", "legalaid.services.gateway.app:app", "--host", "0.0.0.0", "--port", "8080"],
+      "portMappings": [
+        {
+          "containerPort": 8080,
+          "hostPort": 8080,
+          "protocol": "tcp"
+        }
+      ],
+      "environment": [
+        { "name": "OPENAI_API_BASE", "value": "http://localhost:8000/v1" },
+        { "name": "MCP_RETRIEVAL_ENDPOINT", "value": "http://localhost:8001" },
+        { "name": "DATABASE_URL", "value": "postgresql+psycopg://app:pass@aurora-pg.cluster.ap-south-1.rds.amazonaws.com/legalaid" }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/legalaid-multiagent",
+          "awslogs-region": "ap-south-1",
+          "awslogs-stream-prefix": "gateway"
+        }
+      }
+    }
+  ],
+  "volumes": [
+    {
+      "name": "efs-corpus-indices",
+      "efsVolumeConfiguration": {
+        "fileSystemId": "fs-0123456789abcdef0",
+        "transitEncryption": "ENABLED"
+      }
+    }
+  ]
+}
+

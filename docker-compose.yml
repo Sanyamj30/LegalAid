@@ -1,0 +1,74 @@
+name: legalaid-multiagent
+
+services:
+  # ---------------------------------------------------------------------------
+  # 1. Local vLLM Inference Engine (Testing Container / OpenAI Spec)
+  # ---------------------------------------------------------------------------
+  vllm:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.vllm
+    container_name: legalaid-vllm
+    restart: unless-stopped
+    ports:
+      - "8002:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 8s
+      timeout: 4s
+      retries: 3
+      start_period: 5s
+
+  # ---------------------------------------------------------------------------
+  # 2. FastMCP Indian Law Retrieval Server (Tool Service)
+  # ---------------------------------------------------------------------------
+  mcp-retrieval:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.mcp
+    container_name: legalaid-mcp
+    restart: unless-stopped
+    ports:
+      - "8011:8001"
+    environment:
+      - MCP_TRANSPORT=sse
+      - MCP_HOST=0.0.0.0
+      - MCP_PORT=8001
+      - DATABASE_URL=sqlite:////app/legalaid.db
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 8s
+
+  # ---------------------------------------------------------------------------
+  # 3. Main Multi-Agent Orchestration Backend (ADK + CrewAI Gateway)
+  # ---------------------------------------------------------------------------
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: legalaid-backend
+    restart: unless-stopped
+    ports:
+      - "8080:8000"
+    environment:
+      - OPENAI_API_BASE=http://vllm:8000/v1
+      - MCP_RETRIEVAL_ENDPOINT=http://mcp-retrieval:8001
+      - DATABASE_URL=sqlite:////app/legalaid.db
+    depends_on:
+      vllm:
+        condition: service_healthy
+      mcp-retrieval:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  legalaid-storage:
+    driver: local

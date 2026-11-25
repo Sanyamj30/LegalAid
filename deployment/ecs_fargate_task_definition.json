@@ -1,0 +1,73 @@
+{
+  "family": "legalaid-fargate-cluster",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": [
+    "FARGATE"
+  ],
+  "cpu": "1024",
+  "memory": "2048",
+  "containerDefinitions": [
+    {
+      "name": "legalaid-backend",
+      "image": "ACCOUNT_ID.dkr.ecr.ap-south-1.amazonaws.com/legalaid-backend:latest",
+      "essential": true,
+      "cpu": 512,
+      "memory": 1024,
+      "portMappings": [
+        {
+          "containerPort": 8000,
+          "hostPort": 8000,
+          "protocol": "tcp"
+        }
+      ],
+      "environment": [
+        { "name": "ENVIRONMENT", "value": "production" },
+        { "name": "PORT", "value": "8000" },
+        { "name": "MCP_SERVER_URL", "value": "http://127.0.0.1:8001" },
+        { "name": "LLM_PROVIDER", "value": "bedrock" },
+        { "name": "AWS_DEFAULT_REGION", "value": "ap-south-1" },
+        { "name": "LLM_MODEL_NAME", "value": "anthropic.claude-3-5-sonnet-20241022-v2:0" },
+        { "name": "GUARDRAILS_ENABLED", "value": "true" },
+        { "name": "AUTH_ENABLED", "value": "true" }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/legalaid-fargate",
+          "awslogs-region": "ap-south-1",
+          "awslogs-stream-prefix": "backend",
+          "awslogs-create-group": "true"
+        }
+      }
+    },
+    {
+      "name": "legalaid-mcp",
+      "image": "ACCOUNT_ID.dkr.ecr.ap-south-1.amazonaws.com/legalaid-mcp:latest",
+      "essential": true,
+      "cpu": 512,
+      "memory": 1024,
+      "command": ["python", "-m", "legalaid.mcp.retrieval_server"],
+      "portMappings": [
+        {
+          "containerPort": 8001,
+          "hostPort": 8001,
+          "protocol": "tcp"
+        }
+      ],
+      "environment": [
+        { "name": "ENVIRONMENT", "value": "production" },
+        { "name": "PORT", "value": "8001" }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/legalaid-fargate",
+          "awslogs-region": "ap-south-1",
+          "awslogs-stream-prefix": "mcp",
+          "awslogs-create-group": "true"
+        }
+      }
+    }
+  ]
+}
+

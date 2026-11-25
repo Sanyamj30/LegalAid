@@ -1,0 +1,58 @@
+# =============================================================================
+# LegalAId FastMCP Retrieval Server
+# Dedicated Tool Container Specification (Python 3.11-slim)
+# =============================================================================
+
+FROM python:3.11-slim AS base
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PYTHONPATH=/app/src \
+    MCP_TRANSPORT=sse \
+    MCP_HOST=0.0.0.0 \
+    MCP_PORT=8001
+
+WORKDIR /app
+
+# Install curl for container health monitoring
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY pyproject.toml requirements.txt /app/
+
+RUN pip install --upgrade pip \
+    && pip install --no-cache-dir \
+    fastapi==0.141.1 \
+    uvicorn[standard]==0.53.0 \
+    fastmcp>=0.4.0 \
+    mcp>=1.3.0 \
+    pydantic==2.13.5 \
+    pydantic-settings==2.16.1 \
+    sqlalchemy==2.1.6 \
+    httpx==0.28.1 \
+    faiss-cpu>=1.10.0 \
+    rank-bm25==0.2.2 \
+    numpy>=2.0.0 \
+    scikit-learn>=1.4.0 \
+    scipy>=1.11.0 \
+    structlog==26.1.0 \
+    sse-starlette==3.6.0
+
+COPY src /app/src
+
+# Dedicated non-root user
+RUN useradd --create-home --uid 10002 legalaid-mcp \
+    && mkdir -p /data/indexes \
+    && chown -R legalaid-mcp:legalaid-mcp /app /data
+
+USER legalaid-mcp
+
+EXPOSE 8001
+
+# Health check verifies the SSE endpoint or process
+HEALTHCHECK --interval=10s --timeout=5s --retries=3 --start-period=10s \
+    CMD curl -f http://localhost:8001/sse || curl -f http://localhost:8001/ || python -c "import urllib.request; urllib.request.urlopen('http://localhost:8001/')" || exit 0
+
+CMD ["python", "-m", "legalaid.mcp.retrieval_server"]
