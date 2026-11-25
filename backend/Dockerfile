@@ -18,7 +18,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 # Dependency layer caching
-COPY pyproject.toml requirements.txt /app/
+COPY backend/pyproject.toml backend/requirements.txt /app/
 
 # Install locked dependencies (excluding linux GPU vllm wheel which runs in separate container)
 RUN pip install --upgrade pip setuptools wheel \
@@ -47,14 +47,16 @@ RUN pip install --upgrade pip setuptools wheel \
     && apt-get purge -y --auto-remove build-essential
 
 # Copy source code and default prompts
-COPY src /app/src
+COPY backend/src /app/src
+COPY prompts /prompts
+COPY prompts /app/prompts
 
 # Persistent volume mounts for database, indexes, and document uploads
 RUN mkdir -p /data/uploads /data/indexes /data/knowledge_sources
 
 # Run as non-root user for security compliance
 RUN useradd --create-home --uid 10001 legalaid \
-    && chown -R legalaid:legalaid /app /data
+    && chown -R legalaid:legalaid /app /data /prompts
 
 USER legalaid
 
