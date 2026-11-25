@@ -12,6 +12,7 @@ export function Card({
   actions?: ReactNode;
   children: ReactNode;
   tight?: boolean;
+  style?: React.CSSProperties;
 }) {
   return (
     <section className="card">

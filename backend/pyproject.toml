@@ -9,6 +9,7 @@ dependencies = [
     "pydantic==2.12.4",
     "pydantic-settings==2.13.0",
     "sqlalchemy==2.0.44",
+    "psycopg[binary]>=3.2.0",
     "httpx==0.28.1",
     "python-multipart==0.0.20",
     "pymupdf==1.26.5",

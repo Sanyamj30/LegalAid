@@ -29,6 +29,7 @@ vllm>=0.6.2; sys_platform == 'linux'
 # --- Database & Persistence Layer (Req 6) ---
 sqlalchemy==2.1.6
 aiosqlite==0.21.0
+psycopg[binary]>=3.2.0
 
 # --- Information Retrieval, NLP & Document Parsing ---
 faiss-cpu>=1.10.0; sys_platform != 'win32' or python_version < '3.14'

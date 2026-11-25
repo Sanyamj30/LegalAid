@@ -28,6 +28,7 @@ RUN pip install --upgrade pip setuptools wheel \
         pydantic==2.13.5 \
         pydantic-settings==2.16.1 \
         sqlalchemy==2.1.6 \
+        "psycopg[binary]>=3.2.0" \
         httpx==0.28.1 \
         fastmcp>=0.4.0 \
         mcp>=1.3.0 \
