@@ -31,9 +31,9 @@ class RemoteVectorStorage:
         enabled: bool | None = None,
     ) -> None:
         settings = get_settings()
-        self.url = (supabase_url or settings.supabase_url or "").rstrip("/")
-        self.key = supabase_key or settings.supabase_key or ""
-        self.bucket = bucket or settings.supabase_storage_bucket or "legalaid-indexes"
+        self.url = (supabase_url if supabase_url is not None else (settings.supabase_url or "")).rstrip("/")
+        self.key = supabase_key if supabase_key is not None else (settings.supabase_key or "")
+        self.bucket = bucket if bucket is not None else (settings.supabase_storage_bucket or "legalaid-indexes")
         self.enabled = (
             enabled if enabled is not None else settings.vector_storage_sync_enabled
         )

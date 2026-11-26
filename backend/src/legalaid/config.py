@@ -54,7 +54,7 @@ class Settings(BaseSettings):
     # batch 1 -> 2249 ms/chunk, batch 16 -> 161, batch 32 -> 91, batch 64 -> 54 (a 42x gain).
     # Batched vectors are identical to single-call vectors (cosine 1.000000), so this is a
     # pure throughput win. Requires the /api/embed endpoint.
-    embedding_batch_size: int = 32
+    embedding_batch_size: int = 64
     embedding_request_timeout: float = 300.0
 
     # ------------------------------------------------------------- llm/gemini
@@ -193,6 +193,16 @@ class Settings(BaseSettings):
     def _split_csv(cls, value: object) -> object:
         if isinstance(value, str):
             return [item.strip() for item in value.split(",") if item.strip()]
+        return value
+
+    @field_validator("supabase_url")
+    @classmethod
+    def _normalize_supabase_url(cls, value: str) -> str:
+        if value:
+            cleaned = value.strip().rstrip("/")
+            if cleaned.endswith("/rest/v1"):
+                cleaned = cleaned[:-8].rstrip("/")
+            return cleaned
         return value
 
     @field_validator("database_url")

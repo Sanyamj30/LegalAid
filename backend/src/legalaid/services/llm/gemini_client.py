@@ -7,6 +7,8 @@ Preserves complete contract compatibility with OllamaClient.
 
 from __future__ import annotations
 
+import asyncio
+import re
 import time
 from datetime import datetime
 from typing import Any
@@ -72,7 +74,7 @@ class GeminiClient:
     def __init__(self, api_key: str | None = None) -> None:
         settings = get_settings()
         self._settings = settings
-        self.api_key = api_key or settings.gemini_api_key
+        self.api_key = api_key if api_key is not None else settings.gemini_api_key
         self._client: genai.Client | None = None
         if self.api_key:
             self._client = genai.Client(api_key=self.api_key)
@@ -188,31 +190,51 @@ class GeminiClient:
         config = types.GenerateContentConfig(**config_kwargs)
 
         started = time.perf_counter()
-        try:
-            response = await client.aio.models.generate_content(
-                model=model_name,
-                contents=prompt,
-                config=config,
-            )
-        except APIError as exc:
-            raise LLMUnavailableError(
-                f"Google Gemini API error: {exc.message}",
-                {
-                    "provider": "gemini",
-                    "model": model_name,
-                    "code": exc.code,
-                    "response": str(exc),
-                },
-            ) from exc
-        except Exception as exc:
-            raise LLMUnavailableError(
-                f"Google Gemini request failed: {exc}",
-                {
-                    "provider": "gemini",
-                    "model": model_name,
-                    "hint": "Check network connection and GEMINI_API_KEY validity.",
-                },
-            ) from exc
+        response = None
+        max_retries = 5
+        for attempt in range(1, max_retries + 1):
+            try:
+                response = await client.aio.models.generate_content(
+                    model=model_name,
+                    contents=prompt,
+                    config=config,
+                )
+                break
+            except APIError as exc:
+                is_rate_limit = (
+                    exc.code == 429
+                    or "quota" in str(exc).lower()
+                    or "resource_exhausted" in str(exc).lower()
+                )
+                if is_rate_limit and attempt < max_retries:
+                    match = re.search(r"retry in (\d+(?:\.\d+)?)s", str(exc).lower())
+                    delay = float(match.group(1)) + 2.0 if match else min(60.0, 5.0 * (2 ** (attempt - 1)))
+                    logger.warning(
+                        "gemini_generation_rate_limited",
+                        attempt=attempt,
+                        max_retries=max_retries,
+                        retry_in=delay,
+                    )
+                    await asyncio.sleep(delay)
+                    continue
+                raise LLMUnavailableError(
+                    f"Google Gemini API error: {exc.message}",
+                    {
+                        "provider": "gemini",
+                        "model": model_name,
+                        "code": exc.code,
+                        "response": str(exc),
+                    },
+                ) from exc
+            except Exception as exc:
+                raise LLMUnavailableError(
+                    f"Google Gemini request failed: {exc}",
+                    {
+                        "provider": "gemini",
+                        "model": model_name,
+                        "hint": "Check network connection and GEMINI_API_KEY validity.",
+                    },
+                ) from exc
 
         wall_ms = (time.perf_counter() - started) * 1000
 
@@ -259,22 +281,42 @@ class GeminiClient:
 
         for offset in range(0, len(texts), batch_size):
             batch = texts[offset : offset + batch_size]
-            try:
-                response = await client.aio.models.embed_content(
-                    model=model_name,
-                    contents=batch,
-                    config=config,
-                )
-            except APIError as exc:
-                raise LLMUnavailableError(
-                    f"Google Gemini embedding API error: {exc.message}",
-                    {"model": model_name, "code": exc.code},
-                ) from exc
-            except Exception as exc:
-                raise LLMUnavailableError(
-                    f"Google Gemini embedding request failed: {exc}",
-                    {"model": model_name, "hint": "Check GEMINI_API_KEY validity."},
-                ) from exc
+            response = None
+            max_retries = 6
+            for attempt in range(1, max_retries + 1):
+                try:
+                    response = await client.aio.models.embed_content(
+                        model=model_name,
+                        contents=batch,
+                        config=config,
+                    )
+                    break
+                except APIError as exc:
+                    is_rate_limit = (
+                        exc.code == 429
+                        or "quota" in str(exc).lower()
+                        or "resource_exhausted" in str(exc).lower()
+                    )
+                    if is_rate_limit and attempt < max_retries:
+                        match = re.search(r"retry in (\d+(?:\.\d+)?)s", str(exc).lower())
+                        delay = float(match.group(1)) + 2.0 if match else min(60.0, 5.0 * (2 ** (attempt - 1)))
+                        logger.warning(
+                            "gemini_embedding_rate_limited",
+                            attempt=attempt,
+                            max_retries=max_retries,
+                            retry_in=delay,
+                        )
+                        await asyncio.sleep(delay)
+                        continue
+                    raise LLMUnavailableError(
+                        f"Google Gemini embedding API error: {exc.message}",
+                        {"model": model_name, "code": exc.code},
+                    ) from exc
+                except Exception as exc:
+                    raise LLMUnavailableError(
+                        f"Google Gemini embedding request failed: {exc}",
+                        {"model": model_name, "hint": "Check GEMINI_API_KEY validity."},
+                    ) from exc
 
             embeddings = getattr(response, "embeddings", None)
             if not embeddings:

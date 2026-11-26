@@ -15,7 +15,12 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+from pathlib import Path
 import sys
+
+_backend_src = Path(__file__).resolve().parent.parent / "backend" / "src"
+if str(_backend_src) not in sys.path:
+    sys.path.insert(0, str(_backend_src))
 
 from legalaid.db.base import create_all
 from legalaid.ingestion.corpus import all_acts, estimated_provisions

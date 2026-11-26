@@ -320,7 +320,31 @@ async def ingest_act(
                 report.chunks_created += 1
 
     # --------------------------------------------------------------- embed
-    target_ids = new_chunk_ids
+    target_ids = list(new_chunk_ids)
+    with session_scope() as session:
+        # Also include any existing chunks for this act that have not been embedded into FAISS yet
+        act_chunk_ids = list(
+            session.scalars(
+                select(Chunk.id)
+                .join(LegalProvision, Chunk.provision_id == LegalProvision.id)
+                .where(
+                    LegalProvision.act_name == spec.title,
+                    Chunk.collection == spec.collection.value,
+                )
+            ).all()
+        )
+        if act_chunk_ids:
+            embedded_chunk_ids = set(
+                session.scalars(
+                    select(EmbeddingMetadata.chunk_id).where(
+                        EmbeddingMetadata.chunk_id.in_(act_chunk_ids)
+                    )
+                ).all()
+            )
+            for cid in act_chunk_ids:
+                if cid not in embedded_chunk_ids and cid not in target_ids:
+                    target_ids.append(cid)
+
     if reembed:
         with session_scope() as session:
             target_ids = [

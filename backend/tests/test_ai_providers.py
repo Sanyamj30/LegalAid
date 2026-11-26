@@ -24,13 +24,12 @@ from legalaid.services.vector.store import VectorStore, get_store
 
 def test_default_provider_configuration_is_ollama() -> None:
     """Requirement 1, 2, 3: Ollama must be the default provider with all defaults intact."""
-    settings = get_settings()
-    assert settings.llm_provider == "ollama"
-    assert settings.embedding_provider == "ollama"
-    assert settings.ollama_base_url == "http://localhost:11434"
-    assert settings.llm_model == "codellama:7b-instruct"
-    assert settings.embedding_model == "nomic-embed-text"
-    assert settings.embedding_dimensions == 768
+    assert Settings.model_fields["llm_provider"].default == "ollama"
+    assert Settings.model_fields["embedding_provider"].default == "ollama"
+    assert Settings.model_fields["ollama_base_url"].default == "http://localhost:11434"
+    assert Settings.model_fields["llm_model"].default == "codellama:7b-instruct"
+    assert Settings.model_fields["embedding_model"].default == "nomic-embed-text"
+    assert Settings.model_fields["embedding_dimensions"].default == 768
 
 
 def test_gemini_settings_defaults() -> None:
