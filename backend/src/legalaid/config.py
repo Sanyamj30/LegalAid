@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     """Application settings, populated from environment variables and .env."""
 
     model_config = SettingsConfigDict(
-        env_file=(RepoRoot / ".env", Path(".env")),
+        env_file=(RepoRoot / ".env", RepoRoot / "backend" / ".env", Path(".env")),
         env_file_encoding="utf-8",
         extra="ignore",
         case_sensitive=False,
