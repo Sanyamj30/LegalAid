@@ -182,6 +182,25 @@ class CollectionIndex:
         tmp.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
         tmp.replace(self.meta_path)
 
+        # Sync to remote object storage (Supabase Storage) if configured and non-empty
+        try:
+            from legalaid.services.vector.remote_storage import RemoteVectorStorage
+
+            storage = RemoteVectorStorage()
+            if storage.is_configured and len(self._by_chunk) > 0:
+                storage.persist_indexes(
+                    self.index_dir,
+                    self.provider,
+                    self._embedding_model or self.configured_embedding_model or "",
+                    collection_name=self.collection.value,
+                )
+        except Exception as exc:  # noqa: BLE001 - local persistence already succeeded
+            logger.warning(
+                "remote_storage_sync_on_persist_failed",
+                collection=self.collection.value,
+                error=str(exc),
+            )
+
     # ----------------------------------------------------------------- upsert
     def upsert(
         self,
@@ -447,6 +466,24 @@ class VectorStore:
     def reset(self) -> None:
         for index in self.all_indexes().values():
             index.clear()
+
+    def restore_from_remote(self) -> int:
+        """Download remote index files from Supabase Storage if missing locally."""
+        from legalaid.services.vector.remote_storage import RemoteVectorStorage
+
+        storage = RemoteVectorStorage()
+        restored = storage.restore_indexes(self.index_dir, self.provider, self.embedding_model)
+        if restored > 0:
+            with self._lock:
+                self._indexes.clear()
+        return restored
+
+    def sync_to_remote(self) -> int:
+        """Upload non-empty local index collections to Supabase Storage."""
+        from legalaid.services.vector.remote_storage import RemoteVectorStorage
+
+        storage = RemoteVectorStorage()
+        return storage.persist_indexes(self.index_dir, self.provider, self.embedding_model)
 
 
 _store: VectorStore | None = None

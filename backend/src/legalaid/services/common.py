@@ -86,6 +86,18 @@ def create_service_app(
         @app.on_event("startup")
         async def _startup() -> None:
             create_all()
+
+            # Restore persistent vector indexes from Supabase Storage if running on ephemeral disk
+            try:
+                from legalaid.services.vector.store import get_store
+
+                store = get_store()
+                restored = store.restore_from_remote()
+                if restored > 0:
+                    logger.info("remote_vector_indexes_restored_at_startup", count=restored)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("remote_vector_indexes_startup_restore_failed", error=str(exc))
+
             if settings.auth_enabled:
                 # Touching valid_keys() here makes the generated development key appear in the
                 # startup log, rather than on whichever request happens to arrive first.

@@ -484,3 +484,118 @@ def test_postgresql_engine_pool_configuration(monkeypatch: pytest.MonkeyPatch) -
         get_settings.cache_clear()
 
 
+def test_remote_vector_storage_configuration() -> None:
+    """Verify that RemoteVectorStorage is unconfigured by default and becomes
+    configured when SUPABASE_URL and SUPABASE_KEY are provided.
+    """
+    from legalaid.services.vector.remote_storage import RemoteVectorStorage
+
+    # Default: unconfigured
+    default_storage = RemoteVectorStorage(supabase_url="", supabase_key="")
+    assert default_storage.is_configured is False
+
+    # Configured
+    configured_storage = RemoteVectorStorage(
+        supabase_url="https://testproject.supabase.co",
+        supabase_key="dummy-anon-or-service-key",
+        bucket="legalaid-indexes",
+    )
+    assert configured_storage.is_configured is True
+    assert configured_storage.remote_prefix("gemini", "gemini-embedding-001") == "gemini_gemini-embedding-001"
+    assert configured_storage.remote_prefix("ollama", "nomic-embed-text") == "ollama_nomic-embed-text"
+
+
+def test_remote_vector_storage_upload_download(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verify mocked upload and download round-trip with Supabase Storage REST API."""
+    from legalaid.services.vector.remote_storage import RemoteVectorStorage
+
+    storage = RemoteVectorStorage(
+        supabase_url="https://testproject.supabase.co",
+        supabase_key="test-key",
+        bucket="legalaid-indexes",
+    )
+
+    test_file = tmp_path / "legal_acts.faiss"
+    test_file.write_bytes(b"dummy-faiss-binary-data")
+
+    # Mock httpx.Client
+    mock_post_resp = MagicMock(status_code=200, text="ok")
+    mock_get_resp = MagicMock(status_code=200, content=b"dummy-faiss-binary-data")
+
+    mock_client = MagicMock()
+    mock_client.__enter__.return_value = mock_client
+    mock_client.post.return_value = mock_post_resp
+    mock_client.get.return_value = mock_get_resp
+
+    monkeypatch.setattr("httpx.Client", lambda *args, **kwargs: mock_client)
+
+    # 1. Test upload
+    ok = storage.upload_file(test_file, "gemini_gemini-embedding-001/legal_acts.faiss")
+    assert ok is True
+    mock_client.post.assert_called_once()
+    assert "x-upsert" in mock_client.post.call_args[1]["headers"]
+
+    # 2. Test download
+    dest_file = tmp_path / "downloads" / "legal_acts.faiss"
+    downloaded = storage.download_file("gemini_gemini-embedding-001/legal_acts.faiss", dest_file)
+    assert downloaded is True
+    assert dest_file.exists()
+    assert dest_file.read_bytes() == b"dummy-faiss-binary-data"
+
+
+def test_remote_vector_storage_never_overwrites_remote_with_empty_index(tmp_path: Path) -> None:
+    """Requirement 11: Safety invariant - never upload an empty index file over a remote index."""
+    from legalaid.services.vector.remote_storage import RemoteVectorStorage
+
+    storage = RemoteVectorStorage(
+        supabase_url="https://testproject.supabase.co",
+        supabase_key="test-key",
+        bucket="legalaid-indexes",
+    )
+
+    source_dir = tmp_path / "empty_source"
+    source_dir.mkdir(parents=True)
+    faiss_file = source_dir / "legal_acts.faiss"
+    meta_file = source_dir / "legal_acts.meta.json"
+
+    faiss_file.write_bytes(b"empty")
+    # 0 vectors in metadata
+    meta_file.write_text(json.dumps({"collection": "LEGAL_ACTS", "vectors": []}), encoding="utf-8")
+
+    uploaded = storage.persist_indexes(source_dir, "gemini", "gemini-embedding-001")
+    assert uploaded == 0  # Did not upload empty index
+
+
+def test_remote_vector_storage_graceful_degradation_on_failure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Requirement 10: Verify graceful behavior and no crashes when Supabase Storage fails or is unreachable."""
+    from legalaid.services.vector.remote_storage import RemoteVectorStorage
+
+    storage = RemoteVectorStorage(
+        supabase_url="https://testproject.supabase.co",
+        supabase_key="test-key",
+        bucket="legalaid-indexes",
+    )
+
+    # Mock client throwing connection error
+    mock_client = MagicMock()
+    mock_client.__enter__.return_value = mock_client
+    mock_client.post.side_effect = ConnectionError("Could not reach Supabase")
+    mock_client.get.side_effect = TimeoutError("Request timed out")
+
+    monkeypatch.setattr("httpx.Client", lambda *args, **kwargs: mock_client)
+
+    dummy_file = tmp_path / "test.faiss"
+    dummy_file.write_bytes(b"data")
+
+    # Upload failure does not raise
+    assert storage.upload_file(dummy_file, "gemini/test.faiss", max_retries=1) is False
+
+    # Download failure does not raise
+    dest = tmp_path / "failed.faiss"
+    assert storage.download_file("gemini/test.faiss", dest, max_retries=1) is False
+
+    # List failure does not raise
+    assert storage.list_objects("gemini") == []
+
+
+

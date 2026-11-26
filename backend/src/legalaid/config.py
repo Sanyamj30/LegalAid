@@ -141,6 +141,12 @@ class Settings(BaseSettings):
     # --------------------------------------------------------------- database
     database_url: str = ""
 
+    # ------------------------------------------------------- supabase storage
+    supabase_url: str = ""
+    supabase_key: str = ""
+    supabase_storage_bucket: str = "legalaid-indexes"
+    vector_storage_sync_enabled: bool = True
+
     # ------------------------------------------------------------------ paths
     data_dir: Path = RepoRoot / "data"
     upload_dir: Path = RepoRoot / "data" / "uploads"

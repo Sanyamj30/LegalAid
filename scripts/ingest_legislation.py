@@ -77,6 +77,18 @@ async def run(args: argparse.Namespace) -> int:
 
     print()
     print_stats()
+
+    # Sync updated FAISS indexes to Supabase Storage if configured
+    try:
+        from legalaid.services.vector.store import get_store
+
+        store = get_store()
+        uploaded = store.sync_to_remote()
+        if uploaded:
+            print(f"\nsynced {uploaded} index collection(s) to Supabase Storage")
+    except Exception as exc:  # noqa: BLE001
+        print(f"\nremote storage sync notice: {exc}")
+
     # Empty/repealed sections are expected failures, so a non-zero count is not fatal.
     return 0
 
