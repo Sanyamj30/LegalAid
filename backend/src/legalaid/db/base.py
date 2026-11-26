@@ -78,7 +78,7 @@ def get_engine() -> Engine:
             engine_kwargs["pool_pre_ping"] = True
             engine_kwargs["pool_size"] = 5
             engine_kwargs["max_overflow"] = 10
-            engine_kwargs["pool_recycle"] = 1800  # 30 min recycle prevents stale dropped connections
+            engine_kwargs["pool_recycle"] = 300  # 5 min recycle prevents stale dropped connections
 
         _engine = create_engine(
             settings.database_url,

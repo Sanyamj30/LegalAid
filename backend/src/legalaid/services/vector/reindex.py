@@ -9,7 +9,13 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+from pathlib import Path
 import sys
+
+_backend_src = Path(__file__).resolve().parents[2]
+if str(_backend_src) not in sys.path:
+    sys.path.insert(0, str(_backend_src))
+
 from typing import Any
 
 from sqlalchemy import select
@@ -123,7 +129,7 @@ async def run_reindex(
                         EmbeddingMetadata(
                             chunk_id=r.id,
                             vector_id=vector_id,
-                            collection=collection,
+                            collection=collection.value if hasattr(collection, "value") else str(collection),
                             embedding_provider=provider,
                             embedding_model=used_model,
                             dimensions=len(vector),
@@ -135,6 +141,14 @@ async def run_reindex(
                         )
                     )
                 coll_info["embedded"] = len(vector_ids)
+
+    if not dry_run:
+        try:
+            uploaded = target_store.sync_to_remote()
+            result["uploaded_to_supabase"] = uploaded
+            print(f"Synced {uploaded} index collection(s) to Supabase Storage.")
+        except Exception as exc:
+            logger.warning("remote_storage_sync_failed", error=str(exc))
 
     return result
 

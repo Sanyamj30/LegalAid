@@ -440,25 +440,34 @@ async def _embed_and_index(chunk_ids: list[str], collection: Collection) -> int:
     from legalaid.services.embedding.service import _norm, _preview
 
     settings = get_settings()
-    with session_scope() as session:
-        for (chunk_id, text, _meta), vector, vector_id in zip(
-            todo, vectors, vector_ids, strict=True
-        ):
-            session.add(
-                EmbeddingMetadata(
-                    chunk_id=chunk_id,
-                    vector_id=vector_id,
-                    collection=collection.value,
-                    embedding_provider=settings.embedding_provider,
-                    embedding_model=model_name,
-                    dimensions=len(vector),
-                    norm=_norm(vector),
-                    latency_ms=per_item_ms,
-                    input_tokens=estimate_tokens(text),
-                    vector_preview=_preview(vector),
-                    created_at=utcnow(),
-                )
-            )
+    for attempt in range(1, 4):
+        try:
+            with session_scope() as session:
+                for (chunk_id, text, _meta), vector, vector_id in zip(
+                    todo, vectors, vector_ids, strict=True
+                ):
+                    session.add(
+                        EmbeddingMetadata(
+                            chunk_id=chunk_id,
+                            vector_id=vector_id,
+                            collection=collection.value,
+                            embedding_provider=settings.embedding_provider,
+                            embedding_model=model_name,
+                            dimensions=len(vector),
+                            norm=_norm(vector),
+                            latency_ms=per_item_ms,
+                            input_tokens=estimate_tokens(text),
+                            vector_preview=_preview(vector),
+                            created_at=utcnow(),
+                        )
+                    )
+            break
+        except Exception as exc:
+            if attempt < 3:
+                logger.warning("retry_save_embedding_metadata", attempt=attempt, error=str(exc))
+                await asyncio.sleep(1.0 * attempt)
+                continue
+            raise
     return len(vector_ids)
 
 
