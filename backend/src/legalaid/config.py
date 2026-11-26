@@ -57,6 +57,11 @@ class Settings(BaseSettings):
     embedding_batch_size: int = 32
     embedding_request_timeout: float = 300.0
 
+    # ------------------------------------------------------------- llm/gemini
+    gemini_api_key: str = ""
+    gemini_llm_model: str = "gemini-2.5-flash"
+    gemini_embedding_model: str = "gemini-embedding-001"
+
     # -------------------------------------------------------------- retrieval
     retrieval_top_k_laws: int = 8
     retrieval_top_k_cases: int = 5

@@ -34,6 +34,7 @@ from legalaid.domain.contracts import (
     ServiceHealth,
 )
 from legalaid.domain.enums import Collection
+from legalaid.services.llm.gemini_client import GeminiClient
 from legalaid.services.llm.ollama_client import OllamaClient
 from legalaid.services.vector.store import get_store
 
@@ -42,6 +43,13 @@ logger = get_logger(__name__)
 SERVICE_NAME = "embedding-service"
 
 PREVIEW_VALUES = 12
+
+
+def _get_embedding_client() -> OllamaClient | GeminiClient:
+    settings = get_settings()
+    if settings.embedding_provider.lower() == "gemini":
+        return GeminiClient()
+    return OllamaClient()
 
 
 def _preview(vector: list[float]) -> list[float]:
@@ -58,8 +66,11 @@ async def embed_texts_raw(
 ) -> tuple[list[list[float]], float, str]:
     """Embed texts in configured batches. Returns (vectors, elapsed_ms, model_name)."""
     settings = get_settings()
-    client = OllamaClient()
-    model_name = model or settings.embedding_model
+    client = _get_embedding_client()
+    if settings.embedding_provider.lower() == "gemini":
+        model_name = model or settings.gemini_embedding_model
+    else:
+        model_name = model or settings.embedding_model
     batch_size = max(1, settings.embedding_batch_size)
 
     vectors: list[list[float]] = []
@@ -223,22 +234,29 @@ async def embed_chunks(request: EmbedChunksRequest) -> EmbedChunksResponse:
 @register_endpoint(SERVICE_NAME, "GET", "/health", ServiceHealth)
 async def health() -> ServiceHealth:
     settings = get_settings()
-    status = await OllamaClient().status()
+    client = _get_embedding_client()
+    status = await client.status()
+    is_gemini = settings.embedding_provider.lower() == "gemini"
+    current_model = settings.gemini_embedding_model if is_gemini else settings.embedding_model
+    detail = {
+        "provider": settings.embedding_provider,
+        "model": current_model,
+        "dimensions": settings.embedding_dimensions,
+        "batch_size": settings.embedding_batch_size,
+        "model_available": status.embedding_model_available,
+        "indexed_vectors": {
+            collection.value: idx.count
+            for collection, idx in get_store().all_indexes().items()
+            if collection in set(Collection)
+        },
+    }
+    if is_gemini:
+        detail["gemini_reachable"] = status.reachable
+    else:
+        detail["ollama_reachable"] = status.reachable
     return ServiceHealth(
         service=SERVICE_NAME,
-        status="ok" if status.embedding_model_available else "degraded",
+        status="ok" if (status.embedding_model_available or status.reachable) else "degraded",
         transport=settings.service_transport,
-        detail={
-            "provider": settings.embedding_provider,
-            "model": settings.embedding_model,
-            "dimensions": settings.embedding_dimensions,
-            "batch_size": settings.embedding_batch_size,
-            "model_available": status.embedding_model_available,
-            "ollama_reachable": status.reachable,
-            "indexed_vectors": {
-                collection.value: idx.count
-                for collection, idx in get_store().all_indexes().items()
-                if collection in set(Collection)
-            },
-        },
+        detail=detail,
     )

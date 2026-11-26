@@ -63,6 +63,7 @@ from legalaid.core.security import (
 )
 from legalaid.services.common import create_service_app
 from legalaid.services.llm.ollama_client import OllamaClient
+from legalaid.services.llm.service import _get_llm_client
 from legalaid.services.retrieval.graph import get_graph, graph_stats
 from legalaid.services.retrieval.keyword import get_index
 from legalaid.services.retrieval.service import search as retrieval_search
@@ -132,7 +133,7 @@ async def root_health() -> dict[str, str]:
 @app.get("/api/system/health", tags=["system"])
 async def system_health() -> dict[str, Any]:
     settings = get_settings()
-    llm = await OllamaClient().status()
+    llm = await _get_llm_client().status()
     store = get_store()
     with session_scope() as session:
         counts = {
@@ -155,7 +156,7 @@ async def system_health() -> dict[str, Any]:
         "transport": settings.service_transport,
         "ollama": {
             "reachable": llm.reachable,
-            "base_url": llm.base_url,
+            "base_url": getattr(llm, "base_url", settings.ollama_base_url),
             "llm_model": llm.configured_llm_model,
             "llm_model_available": llm.llm_model_available,
             "embedding_model": llm.configured_embedding_model,
@@ -189,9 +190,9 @@ async def system_health() -> dict[str, Any]:
 
 @app.get("/api/models", tags=["system"])
 async def list_models() -> dict[str, Any]:
-    """Installed Ollama models, so the UI can offer a real choice."""
+    """Installed/available models, so the UI can offer a real choice."""
     settings = get_settings()
-    status = await OllamaClient().status()
+    status = await _get_llm_client().status()
     installed = [
         {
             "name": m.name,
@@ -204,10 +205,11 @@ async def list_models() -> dict[str, Any]:
         }
         for m in status.installed_models
     ]
+    is_gemini = settings.llm_provider.lower() == "gemini"
     return {
         "provider": settings.llm_provider,
-        "default_llm_model": settings.llm_model,
-        "embedding_model": settings.embedding_model,
+        "default_llm_model": settings.gemini_llm_model if is_gemini else settings.llm_model,
+        "embedding_model": settings.gemini_embedding_model if is_gemini else settings.embedding_model,
         "embedding_dimensions": settings.embedding_dimensions,
         "num_ctx": settings.llm_num_ctx,
         "temperature": settings.llm_temperature,

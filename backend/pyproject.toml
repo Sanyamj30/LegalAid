@@ -21,6 +21,7 @@ dependencies = [
     "structlog==25.5.0",
     "fastmcp>=0.4.0",
     "crewai>=0.80.0",
+    "google-genai>=0.1.1",
 ]
 
 [project.optional-dependencies]

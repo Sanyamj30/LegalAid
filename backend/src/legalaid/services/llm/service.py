@@ -21,11 +21,19 @@ from legalaid.domain.contracts import (
     LLMStatus,
     ServiceHealth,
 )
+from legalaid.services.llm.gemini_client import GeminiClient
 from legalaid.services.llm.ollama_client import OllamaClient
 
 logger = get_logger(__name__)
 
 SERVICE_NAME = "llm-service"
+
+
+def _get_llm_client() -> OllamaClient | GeminiClient:
+    settings = get_settings()
+    if settings.llm_provider.lower() == "gemini":
+        return GeminiClient()
+    return OllamaClient()
 
 
 def _record_model_run(
@@ -79,11 +87,14 @@ def _record_model_run(
 
 @register_endpoint(SERVICE_NAME, "POST", "/generate", LLMGenerateResponse, LLMGenerateRequest)
 async def generate(request: LLMGenerateRequest) -> LLMGenerateResponse:
-    """Generate text with Ollama + the configured Code Llama model."""
+    """Generate text with configured LLM provider (Ollama or Gemini)."""
     settings = get_settings()
-    client = OllamaClient()
+    client = _get_llm_client()
     model_run_id = new_id("mdl_")
-    model_name = request.model or settings.llm_model
+    if settings.llm_provider.lower() == "gemini":
+        model_name = request.model or settings.gemini_llm_model
+    else:
+        model_name = request.model or settings.llm_model
     temperature = (
         request.temperature if request.temperature is not None else settings.llm_temperature
     )
@@ -174,24 +185,31 @@ async def generate(request: LLMGenerateRequest) -> LLMGenerateResponse:
 
 @register_endpoint(SERVICE_NAME, "GET", "/status", LLMStatus)
 async def status() -> LLMStatus:
-    return await OllamaClient().status()
+    return await _get_llm_client().status()
 
 
 @register_endpoint(SERVICE_NAME, "GET", "/health", ServiceHealth)
 async def health() -> ServiceHealth:
     settings = get_settings()
-    llm_status = await OllamaClient().status()
+    client = _get_llm_client()
+    llm_status = await client.status()
+    is_gemini = settings.llm_provider.lower() == "gemini"
+    detail: dict[str, Any] = {
+        "provider": settings.llm_provider,
+        "llm_model": llm_status.configured_llm_model,
+        "llm_model_available": llm_status.llm_model_available,
+        "error": llm_status.error,
+    }
+    if is_gemini:
+        detail["gemini_reachable"] = llm_status.reachable
+    else:
+        detail["ollama_reachable"] = llm_status.reachable
+        detail["base_url"] = llm_status.base_url
+        detail["embedding_model"] = llm_status.configured_embedding_model
+        detail["embedding_model_available"] = llm_status.embedding_model_available
     return ServiceHealth(
         service=SERVICE_NAME,
         status="ok" if llm_status.reachable else "degraded",
         transport=settings.service_transport,
-        detail={
-            "ollama_reachable": llm_status.reachable,
-            "base_url": llm_status.base_url,
-            "llm_model": llm_status.configured_llm_model,
-            "llm_model_available": llm_status.llm_model_available,
-            "embedding_model": llm_status.configured_embedding_model,
-            "embedding_model_available": llm_status.embedding_model_available,
-            "error": llm_status.error,
-        },
+        detail=detail,
     )

@@ -63,10 +63,19 @@ def normalise(vectors: np.ndarray) -> np.ndarray:
 class CollectionIndex:
     """A single FAISS index plus its metadata sidecar, persisted to disk."""
 
-    def __init__(self, collection: Collection, dimensions: int, index_dir: Path) -> None:
+    def __init__(
+        self,
+        collection: Collection,
+        dimensions: int,
+        index_dir: Path,
+        provider: str = "ollama",
+        embedding_model: str | None = None,
+    ) -> None:
         self.collection = collection
         self.dimensions = dimensions
         self.index_dir = index_dir
+        self.provider = provider.lower()
+        self.configured_embedding_model = embedding_model
         self.index_path = index_dir / f"{collection.value.lower()}.faiss"
         self.meta_path = index_dir / f"{collection.value.lower()}.meta.json"
         self._lock = threading.RLock()
@@ -74,7 +83,8 @@ class CollectionIndex:
         self._by_chunk: dict[str, StoredVector] = {}
         self._by_faiss_id: dict[int, str] = {}
         self._next_faiss_id = 1
-        self._embedding_model: str | None = None
+        self._embedding_model: str | None = embedding_model
+        self._embedding_provider: str | None = self.provider
         self._last_updated: datetime | None = None
         self._load()
 
@@ -120,6 +130,16 @@ class CollectionIndex:
                     self._by_faiss_id[stored.faiss_id] = stored.chunk_id
                 self._next_faiss_id = int(payload.get("next_faiss_id", 1))
                 self._embedding_model = payload.get("embedding_model")
+                self._embedding_provider = payload.get("provider", "ollama")
+                if payload.get("provider") and payload.get("provider").lower() != self.provider:
+                    logger.warning(
+                        "vector_index_provider_mismatch",
+                        collection=self.collection.value,
+                        stored=payload.get("provider"),
+                        configured=self.provider,
+                    )
+                    self._reset()
+                    return
                 updated = payload.get("last_updated")
                 self._last_updated = datetime.fromisoformat(updated) if updated else None
                 return
@@ -144,8 +164,9 @@ class CollectionIndex:
         payload = {
             "collection": self.collection.value,
             "dimensions": self.dimensions,
-            "next_faiss_id": self._next_faiss_id,
+            "provider": self._embedding_provider or self.provider,
             "embedding_model": self._embedding_model,
+            "next_faiss_id": self._next_faiss_id,
             "last_updated": (self._last_updated or utcnow()).isoformat(),
             "vectors": [
                 {
@@ -369,18 +390,49 @@ def _matches(metadata: dict[str, Any], filters: dict[str, Any]) -> bool:
 class VectorStore:
     """Holds one CollectionIndex per collection."""
 
-    def __init__(self, index_dir: Path | None = None, dimensions: int | None = None) -> None:
+    def __init__(
+        self,
+        index_dir: Path | None = None,
+        dimensions: int | None = None,
+        provider: str | None = None,
+        embedding_model: str | None = None,
+    ) -> None:
         settings = get_settings()
-        self.index_dir = index_dir or settings.index_dir
+        self.base_index_dir = index_dir or settings.index_dir
         self.dimensions = dimensions or settings.embedding_dimensions
+        self.provider = (provider or settings.embedding_provider).lower()
+        if embedding_model:
+            self.embedding_model = embedding_model
+        elif self.provider == "gemini":
+            self.embedding_model = settings.gemini_embedding_model
+        else:
+            self.embedding_model = settings.embedding_model
+
+        self.index_dir = self._resolve_index_dir()
         self._indexes: dict[Collection, CollectionIndex] = {}
         self._lock = threading.RLock()
+
+    def _resolve_index_dir(self) -> Path:
+        # Default Ollama nomic-embed-text uses the base index directory preserving existing files.
+        if self.provider == "ollama" and self.embedding_model == "nomic-embed-text":
+            return self.base_index_dir
+        # Segregated directory per provider and model
+        safe_model = (
+            self.embedding_model.replace(":", "_").replace("/", "_").replace(".", "_")
+        )
+        segregated_dir = self.base_index_dir / f"{self.provider}_{safe_model}"
+        segregated_dir.mkdir(parents=True, exist_ok=True)
+        return segregated_dir
 
     def index(self, collection: Collection) -> CollectionIndex:
         with self._lock:
             if collection not in self._indexes:
                 self._indexes[collection] = CollectionIndex(
-                    collection, self.dimensions, self.index_dir
+                    collection,
+                    self.dimensions,
+                    self.index_dir,
+                    provider=self.provider,
+                    embedding_model=self.embedding_model,
                 )
             return self._indexes[collection]
 
@@ -401,11 +453,32 @@ _store: VectorStore | None = None
 _store_lock = threading.Lock()
 
 
-def get_store() -> VectorStore:
+def get_store(
+    index_dir: Path | None = None,
+    dimensions: int | None = None,
+    provider: str | None = None,
+    embedding_model: str | None = None,
+) -> VectorStore:
     global _store
     with _store_lock:
-        if _store is None:
-            _store = VectorStore()
+        settings = get_settings()
+        curr_provider = (provider or settings.embedding_provider).lower()
+        curr_model = embedding_model or (
+            settings.gemini_embedding_model if curr_provider == "gemini" else settings.embedding_model
+        )
+        if (
+            _store is None
+            or _store.provider != curr_provider
+            or _store.embedding_model != curr_model
+            or (index_dir is not None and _store.base_index_dir != index_dir)
+            or (dimensions is not None and _store.dimensions != dimensions)
+        ):
+            _store = VectorStore(
+                index_dir=index_dir,
+                dimensions=dimensions,
+                provider=curr_provider,
+                embedding_model=curr_model,
+            )
         return _store
 
 

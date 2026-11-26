@@ -43,6 +43,7 @@ RUN pip install --upgrade pip setuptools wheel \
         structlog==26.1.0 \
         pyjwt==2.15.1 \
         sse-starlette==3.6.0 \
+        "google-genai>=0.1.1" \
         faiss-cpu>=1.10.0 \
     && apt-get purge -y --auto-remove build-essential
 
