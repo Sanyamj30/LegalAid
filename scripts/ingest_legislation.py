@@ -23,12 +23,13 @@ from legalaid.services.knowledge.ingest import ingest_corpus, knowledge_stats
 
 
 def print_manifest() -> None:
-    print(f"{'key':<22} {'handle':<8} {'sections':>8} {'scope':>6}  title")
+    print(f"{'key':<26} {'act_id':<12} {'sections':>8} {'scope':>6}  title")
     print("-" * 88)
     for spec in all_acts():
         scope = len(spec.section_filter) or (spec.expected_sections or 0)
+        act_id_preview = (spec.act_id[:10] + "..") if len(spec.act_id) > 12 else (spec.act_id or "-")
         print(
-            f"{spec.key:<22} {spec.handle:<8} {spec.expected_sections or 0:>8} "
+            f"{spec.key:<26} {act_id_preview:<12} {spec.expected_sections or 0:>8} "
             f"{scope:>6}  {spec.title}"
         )
     print(f"\nestimated provisions in scope: {estimated_provisions()}")

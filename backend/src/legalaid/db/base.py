@@ -67,11 +67,22 @@ def get_engine() -> Engine:
     if _engine is None:
         settings = get_settings()
         is_sqlite = settings.database_url.startswith("sqlite")
+        engine_kwargs: dict[str, Any] = {
+            "echo": False,
+            "future": True,
+        }
+        if is_sqlite:
+            engine_kwargs["connect_args"] = {"check_same_thread": False}
+        else:
+            # Pool settings optimised for cloud session poolers (e.g. Supabase Supavisor)
+            engine_kwargs["pool_pre_ping"] = True
+            engine_kwargs["pool_size"] = 5
+            engine_kwargs["max_overflow"] = 10
+            engine_kwargs["pool_recycle"] = 1800  # 30 min recycle prevents stale dropped connections
+
         _engine = create_engine(
             settings.database_url,
-            echo=False,
-            future=True,
-            connect_args={"check_same_thread": False} if is_sqlite else {},
+            **engine_kwargs,
         )
         if is_sqlite:
 

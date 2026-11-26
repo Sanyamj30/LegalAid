@@ -193,6 +193,11 @@ class Settings(BaseSettings):
     @classmethod
     def _default_database_url(cls, value: str) -> str:
         if value:
+            # Normalize PostgreSQL connection schemes to use the installed psycopg (v3) driver
+            if value.startswith("postgres://"):
+                return value.replace("postgres://", "postgresql+psycopg://", 1)
+            if value.startswith("postgresql://") and "+psycopg" not in value and "+asyncpg" not in value:
+                return value.replace("postgresql://", "postgresql+psycopg://", 1)
             return value
         db_path = RepoRoot / "data" / "legalaid.db"
         return f"sqlite+pysqlite:///{db_path.as_posix()}"
